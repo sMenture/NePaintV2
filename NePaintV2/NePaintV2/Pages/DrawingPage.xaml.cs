@@ -1,13 +1,11 @@
 ﻿using NePaintV2.Class.DrawClass;
 using NePaintV2.Class.NePaint_v2;
 using NePaintV2.Windows;
-using System.IO;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 
 namespace NePaintV2.Pages
 {
@@ -29,6 +27,23 @@ namespace NePaintV2.Pages
             this.launchPage = launchPage;
 
             InitializeComponent();
+
+            canvasImage.MouseDown += Canvas_MouseDown;
+            canvasImage.MouseLeave += (object sender, MouseEventArgs e) =>
+            {
+                brushEllipse.Visibility = Visibility.Collapsed;
+                Mouse.OverrideCursor = null;
+            };
+            canvasImage.MouseEnter += (object sender, MouseEventArgs e) =>
+            {
+                brushEllipse.Visibility = Visibility.Visible;
+                Mouse.OverrideCursor = Cursors.None;
+            };
+
+            rigidityInfoLabel.TextChanged += BrushHardnessInfoLabel_TextChanged;
+            shapeInfoLabel.TextChanged += ShapeInfoLabel_TextChanged;
+            selectedColorDisplay.MouseDown += SelectedColorDisplay_MouseDown;
+            canvasImage.MouseMove += CanvasImage_MouseMove;
         }
         public void CreateNewCanvas(int hight, int width, string name, Color color)
         {
@@ -37,6 +52,8 @@ namespace NePaintV2.Pages
             drawingCanvas = new DrawingCanvas(width, hight, color);
             canvasImage.Source = drawingCanvas.Bitmap;
 
+            drawingCanvasElement.Width = width;
+            drawingCanvasElement.Height = hight;
 
             InitializeCanvas();
         }
@@ -54,28 +71,12 @@ namespace NePaintV2.Pages
             keyboardHandler = new KeyboardHandler(drawingCanvas, canvasImage, this, shapeInfoLabel, launchWindow);
 
             shapeInfoLabel.Text = $"{drawingCanvas.BrushSize}";
-            canvasImage.MouseMove += CanvasImage_MouseMove;
-
-
-            shapeInfoLabel.TextChanged += ShapeInfoLabel_TextChanged;
-            selectedColorDisplay.MouseDown += SelectedColorDisplay_MouseDown;
-
-            canvasImage.MouseLeave += (object sender, MouseEventArgs e) =>
-            {
-                brushEllipse.Visibility = Visibility.Collapsed;
-                Mouse.OverrideCursor = null;
-            };
-            canvasImage.MouseEnter += (object sender, MouseEventArgs e) =>
-            {
-                brushEllipse.Visibility = Visibility.Visible;
-                Mouse.OverrideCursor = Cursors.None;
-            };
+            rigidityInfoLabel.Text = $"{drawingCanvas.BrushHardness}";
 
             await System.Threading.Tasks.Task.Delay(100);
             UpdateBrushEllipsePosition();
             UpdateBrushEllipseSize();
         }
-
 
 
         public void UpdateBrushEllipsePosition()
@@ -97,7 +98,11 @@ namespace NePaintV2.Pages
             brushEllipse.Height = drawingCanvas.BrushSize * brushSizeScale;
         }
 
-
+        private void Canvas_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            drawingCanvas.previousPoint = null;
+            drawingCanvas.SaveState();
+        }
         private void CanvasImage_MouseMove(object sender, MouseEventArgs e)
         {
             var position = e.GetPosition(canvasImage);
@@ -107,7 +112,6 @@ namespace NePaintV2.Pages
 
             if (e.LeftButton == MouseButtonState.Pressed)
             {
-                drawingCanvas.SaveState();
                 drawingCanvas.HandleMouseMove(adjustedPosition, keyboardHandler.IsEraseMode);
             }
             else
@@ -115,13 +119,11 @@ namespace NePaintV2.Pages
 
             UpdateBrushEllipsePosition();
         }
-
         private void SaveProjectButton_Click(object sender, RoutedEventArgs e)
         {
             SaveProject saveProject = new SaveProject();
             saveProject.SaveProjectData(this.Title, (int)canvasImage.Width, (int)canvasImage.Height);
         }
-
 
 
 
@@ -148,8 +150,14 @@ namespace NePaintV2.Pages
         }
 
 
-
-
+        private void BrushHardnessInfoLabel_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (int.TryParse(rigidityInfoLabel.Text, out int newSize))
+            {
+                drawingCanvas.ChangeBrushHardness(newSize - (int)drawingCanvas.BrushHardness);
+                UpdateBrushEllipseSize();
+            }
+        }
 
         private void ShapeInfoLabel_TextChanged(object sender, TextChangedEventArgs e)
         {

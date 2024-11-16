@@ -20,6 +20,7 @@ namespace NePaintV2.Class.DrawClass
         public Color selectedColor = Colors.Black;
         private Color startColor;
         public int BrushSize { get; private set; } = 30;
+        public double BrushHardness { get; set; } = 10;
 
 
         public DrawingCanvas(int width, int height, Color startColor)
@@ -71,16 +72,8 @@ namespace NePaintV2.Class.DrawClass
             writeableBitmap.Unlock();
         }
 
-
-
-
         public void HandleMouseMove(Point position, bool eraseMode)
         {
-            if (previousPoint == null)
-            {
-                SaveState();
-            }
-
             var currentPoint = new Point((int)position.X, (int)position.Y);
 
             if (previousPoint != null)
@@ -93,6 +86,8 @@ namespace NePaintV2.Class.DrawClass
             }
             previousPoint = currentPoint;
         }
+
+
         public void SaveState()
         {
             byte[] pixelData = new byte[writeableBitmap.PixelWidth * writeableBitmap.PixelHeight * 4];
@@ -109,8 +104,6 @@ namespace NePaintV2.Class.DrawClass
         }
 
 
-
-
         private void DrawPixel(int x, int y, bool eraseMode)
         {
             int limit = BrushSize / 2;
@@ -120,9 +113,8 @@ namespace NePaintV2.Class.DrawClass
                 {
                     MessageBoxResult result;
                     result = MessageBox.Show("" +
-                        "Кисть вышела за пределы холста!\n\n" +
+                        "Кисть вышла за пределы холста!\n\n" +
                         "Данное сообщение будет высвечиваться каждый раз, когда ваш курсор будет покидать пределы холста.", "Предупреждение", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-
 
                     if (result == MessageBoxResult.Cancel)
                         showOutOfBoundsWarning = false;
@@ -132,9 +124,7 @@ namespace NePaintV2.Class.DrawClass
 
             try
             {
-
-                Color color = eraseMode ? startColor : selectedColor;
-
+                Color baseColor = eraseMode ? startColor : selectedColor;
                 writeableBitmap.Lock();
 
                 unsafe
@@ -143,9 +133,7 @@ namespace NePaintV2.Class.DrawClass
                     pBackBuffer += y * writeableBitmap.BackBufferStride;
                     pBackBuffer += x * 4;
 
-                    int colorData = color.R << 16;
-                    colorData |= color.G << 8;
-                    colorData |= color.B << 0;
+                    byte* pPixels = (byte*)writeableBitmap.BackBuffer.ToPointer();
 
                     for (int i = -BrushSize / 2; i < BrushSize / 2; i++)
                     {
@@ -155,18 +143,44 @@ namespace NePaintV2.Class.DrawClass
                             int ny = y + j;
                             if (nx >= 0 && nx < width && ny >= 0 && ny < height)
                             {
-                                IntPtr pBackBufferLocal = pBackBuffer + j * writeableBitmap.BackBufferStride + i * 4;
-                                *((int*)pBackBufferLocal) = colorData;
+                                double distance = Math.Sqrt(i * i + j * j);
+                                if (distance > BrushSize / 2)
+                                    continue;
+
+                                double hardnessFactor = BrushHardness / 100.0;
+                                double opacity = Math.Max(0, hardnessFactor - (distance / (BrushSize / 2)) * hardnessFactor);
+                                int alpha = (int)(baseColor.A * opacity);
+
+                                int index = (ny * writeableBitmap.BackBufferStride) + (nx * 4);
+                                byte origAlpha = pPixels[index + 3];
+                                byte origRed = pPixels[index + 2];
+                                byte origGreen = pPixels[index + 1];
+                                byte origBlue = pPixels[index];
+
+                                byte newRed = (byte)((baseColor.R * alpha + origRed * (255 - alpha)) / 255);
+                                byte newGreen = (byte)((baseColor.G * alpha + origGreen * (255 - alpha)) / 255);
+                                byte newBlue = (byte)((baseColor.B * alpha + origBlue * (255 - alpha)) / 255);
+                                byte newAlpha = (byte)Math.Min(255, origAlpha + alpha);
+
+                                pPixels[index] = newBlue;
+                                pPixels[index + 1] = newGreen;
+                                pPixels[index + 2] = newRed;
+                                pPixels[index + 3] = newAlpha;
                             }
                         }
                     }
                 }
 
                 writeableBitmap.AddDirtyRect(new Int32Rect(x - BrushSize / 2, y - BrushSize / 2, BrushSize, BrushSize));
+                writeableBitmap.Unlock();
             }
-            catch{}
-            writeableBitmap.Unlock();
+            catch
+            {
+                writeableBitmap.Unlock();
+            }
         }
+
+
         private void DrawLine(Point from, Point to, bool eraseMode)
         {
             int x0 = (int)from.X;
@@ -180,6 +194,7 @@ namespace NePaintV2.Class.DrawClass
             int sy = y0 < y1 ? 1 : -1;
             int err = dx - dy;
 
+            writeableBitmap.Lock();
             while (true)
             {
                 DrawPixel(x0, y0, eraseMode);
@@ -197,7 +212,11 @@ namespace NePaintV2.Class.DrawClass
                     y0 += sy;
                 }
             }
+            writeableBitmap.Unlock();
         }
+
+
+
 
 
         public void SetSelectedColor(Color color)
@@ -211,6 +230,15 @@ namespace NePaintV2.Class.DrawClass
                 BrushSize = 1;
             else if (BrushSize > 500)
                 BrushSize = 500;
+
+        }
+        public void ChangeBrushHardness(int delta)
+        {
+            BrushHardness = BrushHardness + delta;
+            if (BrushHardness < 1)
+                BrushHardness = 1;
+            else if (BrushHardness > 500)
+                BrushHardness = 500;
 
         }
 
